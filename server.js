@@ -125,15 +125,5 @@ app.listen(PORT, () => {
     console.log(`my-tts-backend server is running on port ${PORT}`);
 });
 
-```
+// *** REMOVED Instructions text from here ***
 
-**ជំហានបន្ទាប់៖**
-
-1.  **Update Code:** ចម្លង (Copy) កូដ `server.js` ថ្មីនេះ ទៅជំនួសកូដចាស់ នៅក្នុង Project `my-tts-backend` របស់អ្នក។
-2.  **Save:** រក្សាទុកไฟล์។
-3.  **Push to GitHub:** បញ្ជូន (Push) ការផ្លាស់ប្តូរនេះ ទៅកាន់ GitHub Repository របស់ `my-tts-backend`។
-    ```bash
-    git add server.js
-    git commit -m "Fix syntax error in generate-speech endpoint and add logging"
-    git push origin main
-    
