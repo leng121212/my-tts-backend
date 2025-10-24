@@ -3,118 +3,137 @@ const axios = require('axios');
 const cors = require('cors');
 const app = express();
 
-// អនុញ្ញាតឲ្យ Frontend របស់អ្នក (ទោះនៅ Domain ណាក៏ដោយ) អាចហៅមកបាន
 app.use(cors()); 
-
-// អនុញ្ញាតឲ្យ Server អាចអានទិន្នន័យជា JSON ពី Frontend
 app.use(express.json());
 
-// អាន Key និង Region ពី Environment Variables (ដែល Render នឹងផ្តល់ឲ្យ)
-const MY_AZURE_KEY = process.env.AZURE_SPEECH_KEY;
-const MY_AZURE_REGION = process.env.AZURE_SPEECH_REGION;
-
-// បង្កើត Endpoint សម្រាប់ឲ្យ Frontend ហៅមក
+// Endpoint សម្រាប់ Frontend (Combind.html) ហៅមក
 app.post('/api/generate-speech', async (req, res) => {
+    console.log("Received request for /api/generate-speech"); // Log 1: Request received
+    
+    // យក ssml_data និង apiKey ពី request body
+    const { ssml_data, apiKey: userApiKey } = req.body; 
 
-    // ពិនិត្យមើលថា តើ Key មានឬអត់
+    // ពិនិត្យមើលថា តើ ssml_data និង userApiKey មានតម្លៃឬអត់
+    if (!ssml_data || !userApiKey) {
+        console.warn("Missing ssml_data or apiKey in request body");
+        return res.status(400).send("Missing ssml_data or apiKey in the request.");
+    }
+
+    // អាន Azure Key និង Region ពី Environment Variables (របស់ my-tts-backend)
+    const MY_AZURE_KEY = process.env.AZURE_SPEECH_KEY;
+    const MY_AZURE_REGION = process.env.AZURE_SPEECH_REGION;
+
+    // ពិនិត្យមើលថា តើ Azure Key/Region មានកំណត់ក្នុង Environment Variables ឬអត់
     if (!MY_AZURE_KEY || !MY_AZURE_REGION) {
-        console.error("Azure Key ឬ Region មិនត្រូវបានកំណត់ (set) ទេ");
-        return res.status(500).send("Server configuration error");
+        console.error("!!! CRITICAL: Azure Speech Key or Region is not set in environment variables for my-tts-backend.");
+        return res.status(500).send("Server configuration error: Azure credentials missing.");
     }
+    console.log("Azure Key/Region loaded from environment."); // Log 2: Azure keys loaded
 
-    // Inside app.post('/api/generate-speech', ...) endpoint of my-tts-backend/server.js
+    try {
+        console.log("Entering try block for API key validation and Azure call."); // Log 3: Entering try block
+        
+        // --- START: Validate User API Key via api-key-manager backend ---
+        // !!! សូមប្រាកដថា URL នេះ គឺជា URL ពិតប្រាកដរបស់ api-key-manager service របស់អ្នក !!!
+        const apiKeyManagerUrl = 'https://api-key-manager.onrender.com/api/validate-key'; 
+        
+        // TODO: កែលម្អ Logic គណនាចំនួនតួអក្សរឲ្យបានត្រឹមត្រូវជាងនេះ
+        //       (ឧ. រាប់តែ Text content ដោយមិនរាប់ SSML tags)
+        const charactersNeeded = ssml_data.length; // គ្រាន់តែជាការប៉ាន់ស្មានសាមញ្ញ
+        console.log(`Validating User API Key ${userApiKey} for estimated ${charactersNeeded} characters...`); // Log 4: Calling validation
 
-// ... (Get ssml_from_user and userApiKey) ...
+        const validationResponse = await fetch(apiKeyManagerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // TODO: បន្ថែម Secret Key សម្រាប់ Backend-to-Backend Authentication (ប្រសិនបើចាំបាច់)
+            body: JSON.stringify({ apiKey: userApiKey, charactersNeeded: charactersNeeded })
+        });
+        console.log(`Validation service response status: ${validationResponse.status}`); // Log 5: Validation response status
 
-try {
-    // --- START: Validate API Key via api-key-manager backend ---
-    // !!! ប្តូរ URL នេះ ទៅជា URL ពិតប្រាកដរបស់ api-key-manager របស់អ្នក !!!
-    const apiKeyManagerUrl = 'https://api-key-manager.onrender.com/api/validate-key'; 
-
-    // TODO: អ្នកត្រូវគណនាចំនួនតួអក្សរដែលត្រូវការឲ្យបានត្រឹមត្រូវ
-    //       (អាចយក Logic ពី handleInput() ក្នុង Combind.html មកប្រើ)
-    //       ឧទាហរណ៍៖ រាប់តួអក្សរក្នុង SSML ដោយមិនរាប់ Tags? 
-    const charactersNeeded = ssml_from_user.length; // ឧទាហរណ៍សាមញ្ញ (ត្រូវកែ)
-
-    const validationResponse = await fetch(apiKeyManagerUrl, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         // TODO: Add secret key for backend-to-backend auth if implemented
-         body: JSON.stringify({ apiKey: userApiKey, charactersNeeded: charactersNeeded })
-    });
-
-    const validationResult = await validationResponse.json();
-
-    if (!validationResponse.ok || !validationResult.isValid) {
-         // ប្រើ Status Code ពី Backend ថ្មី ឬ Default ទៅ 401/403
-         const statusCode = validationResponse.status === 200 ? 403 : validationResponse.status; 
-         console.warn(`API Key validation failed for ${userApiKey}: ${validationResult.reason}`); // Log the reason
-         return res.status(statusCode).send(validationResult.reason || 'API Key validation failed.');
-    }
-    // --- END: Validate API Key ---
-
-    // --- បន្តហៅទៅ Azure (ប្រសិនបើ Key ត្រឹមត្រូវ) ---
-    console.log(`API Key ${userApiKey} validated successfully. Proceeding with Azure call.`);
-    const azureEndpoint = `https://${MY_AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
-    const response = await axios.post(azureEndpoint, ssml_from_user, { 
-        headers: {
-            'Ocp-Apim-Subscription-Key': MY_AZURE_KEY, 
-            'Content-Type': 'application/ssml+xml',
-            'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
-        },
-        responseType: 'arraybuffer' 
-    });
-
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(response.data);
-
-} catch (error) {
-    console.error("Error in /api/generate-speech:", error.message);
-    // Avoid sending detailed internal errors to the client unless it's a validation error caught earlier
-    if (res.headersSent) { // Check if headers already sent (e.g., from validation fail)
-        return;
-    }
-    if (error.response && error.response.data) { // Axios error from Azure
-         console.error("Azure Error Data:", error.response.data.toString());
-         res.status(500).send("Error contacting speech service.");
-    } else if (error.message.includes("fetch failed") || error.code === 'ECONNREFUSED') { // Network error calling validation
-        res.status(500).send("Could not reach API key validation service.");
-    }
-    else { // Other errors
-        res.status(500).send("Internal server error.");
-    }
-}
-        const ssml_from_user = req.body.ssml_data; 
-
-        if (!ssml_from_user) {
-             return res.status(400).send("No SSML data provided");
+        // ពិនិត្យមើល Response ពី Validation Service
+        let validationResult;
+        try {
+            validationResult = await validationResponse.json();
+        } catch (jsonError) {
+             console.error("Error parsing JSON response from validation service:", jsonError);
+             // ព្យាយាមអាន Response ជា Text ដើម្បីមើល Error Message ពី Backend
+             const errorText = await validationResponse.text().catch(() => "Could not read response text.");
+             console.error("Validation service response text:", errorText);
+             return res.status(500).send(`Invalid response from validation service: ${errorText.substring(0, 100)}`); // Show part of the error
         }
 
+
+        if (!validationResponse.ok || !validationResult.isValid) {
+            const statusCode = validationResponse.status === 200 ? 403 : validationResponse.status; // If status is 200 but not valid -> Forbidden
+            const reason = validationResult.reason || validationResult.error || 'API Key validation failed.';
+            console.warn(`API Key validation failed for ${userApiKey}: ${reason}`); // Log 6: Validation failed
+            return res.status(statusCode).send(reason);
+        }
+        // --- END: Validate User API Key ---
+
+        // --- បន្តហៅទៅ Azure Speech Service (ប្រសិនបើ User API Key ត្រឹមត្រូវ) ---
+        console.log(`User API Key ${userApiKey} validated successfully. Proceeding with Azure call.`); // Log 7: Validation successful
         const azureEndpoint = `https://${MY_AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
-
-        // Backend ប្រើ Key សម្ងាត់ ដើម្បីហៅទៅ Azure
-        const response = await axios.post(azureEndpoint, ssml_from_user, {
+        
+        // ប្រើ axios ដើម្បីហៅទៅ Azure
+        const azureResponse = await axios.post(azureEndpoint, ssml_data, { 
             headers: {
-                'Ocp-Apim-Subscription-Key': MY_AZURE_KEY,
+                'Ocp-Apim-Subscription-Key': MY_AZURE_KEY, // ប្រើ Azure Key របស់ Admin
                 'Content-Type': 'application/ssml+xml',
-                'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
+                'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3' // ស្នើសុំជា MP3
             },
-            responseType: 'arraybuffer' // សុំទិន្នន័យជាសំឡេង
+            responseType: 'arraybuffer' // ស្នើសុំ Response ជា binary data (audio)
         });
-
-        // បញ្ជូនសំឡេងដែលបានពី Azure ត្រឡប់ទៅឲ្យ Frontend វិញ
+        console.log(`Azure call successful. Response status: ${azureResponse.status}`); // Log 8: Azure call successful
+        
+        // បញ្ជូនไฟล์សំឡេង (MP3) ត្រឡប់ទៅ Frontend វិញ
         res.set('Content-Type', 'audio/mpeg');
-        res.send(response.data);
+        res.send(azureResponse.data);
+        console.log("Audio data sent back to client."); // Log 9: Response sent
 
-    } catch (error) {
-        // បង្ហាញ Error ឲ្យបានច្បាស់នៅក្នុង Log របស់ Server
-        console.error("Error calling Azure:", error.response ? error.response.data.toString() : error.message);
-        res.status(500).send("Error generating speech");
-    }
-});
+    } catch (error) { // This catch block handles errors from validation call or Azure call
+        console.error("!!! ERROR within /api/generate-speech try block:", error); // Log 10: Error occurred
+        
+        // Check if response headers have already been sent (e.g., by validation failure return)
+        if (res.headersSent) { 
+            console.error("Headers already sent, cannot send further error response.");
+            return; 
+        }
+
+        // Provide more specific error messages based on the error type
+        if (error.response && error.response.data) { // Axios error (likely from Azure)
+             console.error("Azure Error Status:", error.response.status);
+             console.error("Azure Error Data:", error.response.data.toString());
+             res.status(500).send("Error contacting the external speech synthesis service.");
+        } else if (error.message.includes("fetch") || error.code === 'ECONNREFUSED' || error.cause?.code === 'UND_ERR_CONNECT_TIMEOUT') { // Network error calling validation service
+             console.error("Network error calling validation service:", error.message);
+            res.status(500).send("Service temporarily unavailable (cannot reach validation). Please try again later.");
+        } else if (error instanceof SyntaxError && error.message.includes("JSON")) { // JSON parsing error from validation response
+            console.error("Error parsing validation response JSON:", error);
+            res.status(500).send("Received an invalid response from the validation service.");
+        }
+        else { // Other generic errors
+            console.error("Generic server error:", error.message);
+            res.status(500).send("An internal server error occurred during speech generation.");
+        }
+    } // End of catch block
+}); // End of app.post('/api/generate-speech')
 
 // ដំណើរការ Server
-const PORT = process.env.PORT || 10000; // Render នឹងផ្តល់ PORT នេះដោយស្វ័យប្រវត្តិ
+const PORT = process.env.PORT || 10000; 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`my-tts-backend server is running on port ${PORT}`);
 });
+
+```
+
+**ជំហានបន្ទាប់៖**
+
+1.  **Update Code:** ចម្លង (Copy) កូដ `server.js` ថ្មីនេះ ទៅជំនួសកូដចាស់ នៅក្នុង Project `my-tts-backend` របស់អ្នក។
+2.  **Save:** រក្សាទុកไฟล์។
+3.  **Push to GitHub:** បញ្ជូន (Push) ការផ្លាស់ប្តូរនេះ ទៅកាន់ GitHub Repository របស់ `my-tts-backend`។
+    ```bash
+    git add server.js
+    git commit -m "Fix syntax error in generate-speech endpoint and add logging"
+    git push origin main
+    
