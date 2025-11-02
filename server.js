@@ -3,10 +3,26 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import cors from "cors";
 
+const allowedOrigins = [
+  "https://trabekprey.com",         // 🌐 Website ផ្លូវការ
+  "https://your-frontend.netlify.app", // ប្រសិនបើអ្នកមាន version ផ្សេង
+  "http://localhost:5500"           // សម្រាប់សាកល្បងនៅ local
+];
+
 dotenv.config();
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+  })
+)
 app.use(express.json());
 
 // ✅ Use correct env variable names
