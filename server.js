@@ -12,17 +12,11 @@ const allowedOrigins = [
 dotenv.config();
 const app = express();
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-  })
-)
+app.use(cors({
+  origin: ["http://127.0.0.1:5500", "http://localhost:5500"], // ✅ អនុញ្ញាត localhost
+  methods: ["GET", "POST"],
+}));
+
 app.use(express.json());
 
 // ✅ Use correct env variable names
