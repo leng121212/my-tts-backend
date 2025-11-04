@@ -20,14 +20,14 @@ app.use(cors({
 app.use(express.json());
 
 // ✅ Use correct env variable names
-const AZURE_KEY = process.env.AZURE_SPEECH_KEY;
-const REGION = process.env.AZURE_SPEECH_REGION || "eastasia";
+const SPEECH_KEY = process.env.AZURE_SPEECH_KEY;
+const REGION = process.env.AZURE_SPEECH_REGION;
 const ENDPOINT =
   process.env.AZURE_SPEECH_ENDPOINT ||
   `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
 app.post("/api/tts", async (req, res) => {
-  if (!AZURE_KEY || !REGION) {
+  if (!SPEECH_KEY || !REGION) {
     console.error("❌ Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION");
     return res.status(500).json({ error: "Server configuration error." });
   }
