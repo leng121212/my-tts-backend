@@ -54,7 +54,7 @@ app.post("/api/tts", async (req, res) => {
         <voice name='${voice}'>${text}</voice>
       </speak>`;
 
-    console.log("🟦 Azure Config:", { REGION, SPEECH_KEY: SPEECH_KEY?.slice(0, 5) + "..." });
+    console.log("🟦 Azure Config:", { REGION, AZURE_SPEECH_KEY: AZURE_KEY?.slice(0, 5) + "..." });
 
     const audioRes = await fetch(ENDPOINT, {
       method: "POST",
