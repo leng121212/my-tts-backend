@@ -3,31 +3,25 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import cors from "cors";
 
-const allowedOrigins = [
-  "https://trabekprey.com",         // 🌐 Website ផ្លូវការ
-  "https://your-frontend.netlify.app", // ប្រសិនបើអ្នកមាន version ផ្សេង
-  "http://localhost:5500"           // សម្រាប់សាកល្បងនៅ local
-];
-
 dotenv.config();
+
 const app = express();
 
+// ✅ Allow CORS (សម្រាប់ Frontend HTML)
 app.use(cors({
-  origin: ["http://127.0.0.1:5500", "http://localhost:5500"], // ✅ អនុញ្ញាត localhost
+  origin: ["http://127.0.0.1:5500", "http://localhost:5500", "https://my-tts-frontend.com"],
   methods: ["GET", "POST"],
 }));
 
 app.use(express.json());
 
-// ✅ Use correct env variable names
-const SPEECH_KEY = process.env.AZURE_SPEECH_KEY;
-const REGION = process.env.AZURE_SPEECH_REGION;
-const ENDPOINT =
-  process.env.AZURE_SPEECH_ENDPOINT ||
-  `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
+// ✅ Load Azure Speech Key
+const AZURE_KEY = process.env.AZURE_SPEECH_KEY;
+const REGION = process.env.AZURE_SPEECH_REGION || "eastasia";
+const ENDPOINT = process.env.AZURE_SPEECH_ENDPOINT || `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
 app.post("/api/tts", async (req, res) => {
-  if (!SPEECH_KEY || !REGION) {
+  if (!AZURE_KEY || !REGION) {
     console.error("❌ Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION");
     return res.status(500).json({ error: "Server configuration error." });
   }
@@ -45,16 +39,14 @@ app.post("/api/tts", async (req, res) => {
       return res.status(400).json({ error: "Invalid voice format." });
     }
 
-    // ✅ Detect language from voice (example: km-KH)
     const langCode = voice.substring(0, 5);
-
-    // ✅ Generate SSML for Azure Speech
     const ssml = `
       <speak version='1.0' xml:lang='${langCode}' xmlns='http://www.w3.org/2001/10/synthesis'>
         <voice name='${voice}'>${text}</voice>
       </speak>`;
 
-    console.log("🟦 Azure Config:", { REGION, AZURE_SPEECH_KEY: AZURE_KEY?.slice(0, 5) + "..." });
+    // ✅ Log only AZURE_KEY (partial)
+    console.log("🟦 Azure Config:", { REGION, AZURE_KEY: AZURE_KEY?.slice(0, 6) + "..." });
 
     const audioRes = await fetch(ENDPOINT, {
       method: "POST",
@@ -76,9 +68,7 @@ app.post("/api/tts", async (req, res) => {
       });
     }
 
-    // ✅ Convert result to buffer
     const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-
     res.set("Content-Type", "audio/mpeg");
     res.send(audioBuffer);
   } catch (err) {
@@ -87,7 +77,6 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
-// Health check
 app.get("/", (req, res) => res.send("✅ Azure Speech Server Running"));
 
 const PORT = process.env.PORT || 3000;
